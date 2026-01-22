@@ -1,0 +1,51 @@
+.stats-panel h3 {
+    color: #fff;
+    font-size: 1.25rem;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.group-stats {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.group-stats h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+}
+
+.group-stats table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.group-stats th,
+.group-stats td {
+    padding: 0.5rem;
+    text-align: right;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.group-stats th {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.group-stats td {
+    color: var(--text-main);
+}
+
+.group-stats tr:last-child td {
+    border-bottom: none;
+}
+
+.group-stats tr:hover td {
+    background: rgba(255, 255, 255, 0.05);
+}
