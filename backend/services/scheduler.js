@@ -98,12 +98,42 @@ function findReplacement(excludedStudentId, dutyStart, dutyEnd, groupStudents, t
 }
 
 /**
+ * Persist an existing schedule to history
+ * @param {Array} schedule
+ */
+export async function persistSchedule(schedule) {
+    for (const day of schedule) {
+        const { date, assignments } = day;
+
+        for (const group of Object.keys(assignments)) {
+            const assignment = assignments[group];
+
+            // Record Tami
+            if (assignment.main) {
+                recordTami(assignment.main.id, date);
+            }
+
+            // Record Replacements
+            if (assignment.replacements) {
+                if (assignment.replacements.lunch) {
+                    recordToren(assignment.replacements.lunch.id, date);
+                }
+                if (assignment.replacements.dinner) {
+                    recordToren(assignment.replacements.dinner.id, date);
+                }
+            }
+        }
+    }
+}
+
+/**
  * Generate schedule for a range of days
  * @param {Date} startDate 
  * @param {number} days 
  * @param {boolean} persist - Whether to save to history
+ * @param {string[]} excludedIds - List of student IDs to exclude
  */
-export async function generateSchedule(startDate, days, persist = false) {
+export async function generateSchedule(startDate, days, persist = false, excludedIds = []) {
     const schedule = [];
     const groups = ['Sinai', 'Ziv', 'Nvia'];
 
@@ -136,13 +166,20 @@ export async function generateSchedule(startDate, days, persist = false) {
         const assignments = {};
 
         for (const group of groups) {
-            const groupStudents = getStudentsByGroup(group);
+            let groupStudents = getStudentsByGroup(group);
+
+            // Filter out excluded students
+            if (excludedIds.length > 0) {
+                groupStudents = groupStudents.filter(s => !excludedIds.includes(s.id));
+            }
 
             // Select best Tami for this day using local counts
             const tami = selectBestTami(groupStudents, mealTimes, isVolunteeringDay, tamiCounts);
 
             if (!tami) {
                 console.error(`No tami found for group ${group} on ${dateStr}`);
+                // In case all students in a group are excluded, we just skip assignment
+                // Or we could assign a placeholder, but for now we skip.
                 continue;
             }
 

@@ -71,6 +71,19 @@ export function recordToren(studentId, date) {
 }
 
 /**
+ * Updates the stats for a student
+ * @param {string} studentId
+ * @param {number} tamiCount
+ * @param {number} torenCount
+ */
+export function updateStudentStats(studentId, tamiCount, torenCount) {
+    const history = loadHistory();
+    history.tamiCount[studentId] = tamiCount;
+    history.torenCount[studentId] = torenCount;
+    saveHistory(history);
+}
+
+/**
  * Gets the Tami count for a student
  * @param {string} studentId 
  * @returns {number}

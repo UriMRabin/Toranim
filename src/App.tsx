@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { StatsPanel } from './components/StatsPanel';
+import { GenerationControls } from './components/GenerationControls';
 import './index.css';
 
 // Backend URL - will be updated after Render deployment
@@ -12,8 +13,10 @@ function App() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  // lastGenParams is less critical now that we persist current schedule, but kept for fetchSchedule usage
+  const [lastGenParams, setLastGenParams] = useState({ days: 28, excludedIds: [] });
 
-  const fetchSchedule = async (persist = false) => {
+  const fetchSchedule = async (days = 28, excludedIds: string[] = [], persist = false) => {
     setLoading(true);
     try {
       const today = new Date();
@@ -21,7 +24,18 @@ function App() {
       startOfWeek.setDate(today.getDate() - today.getDay());
 
       const startDate = startOfWeek.toISOString().split('T')[0];
-      const url = `${API_URL}/api/schedule?startDate=${startDate}&days=28&persist=${persist}`;
+
+      const params = new URLSearchParams({
+          startDate,
+          days: days.toString(),
+          persist: persist.toString()
+      });
+
+      if (excludedIds.length > 0) {
+          params.append('excludedIds', excludedIds.join(','));
+      }
+
+      const url = `${API_URL}/api/schedule?${params.toString()}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -29,6 +43,9 @@ function App() {
       if (data.schedule) {
         setSchedule(data.schedule);
         setWeekOffset(0);
+        if (!persist) {
+            setLastGenParams({ days, excludedIds });
+        }
       }
     } catch (error) {
       console.error('Failed to fetch schedule:', error);
@@ -52,7 +69,7 @@ function App() {
   };
 
   useEffect(() => {
-    fetchSchedule(false);
+    fetchSchedule(7); // Default to 1 week on load
     fetchStats();
   }, []);
 
@@ -68,9 +85,28 @@ function App() {
 
   const confirmSchedule = async () => {
     if (confirm('האם לאשר ולשמור את הלו"ז הנוכחי? פעולה זו תעדכן את ההיסטוריה.')) {
-      await fetchSchedule(true);
-      await fetchStats();
-      alert('הלו"ז אושר ונשמר!');
+      setLoading(true);
+      try {
+          const response = await fetch(`${API_URL}/api/schedule/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  schedule // Send the current schedule to persist
+              })
+          });
+
+          if (response.ok) {
+              await fetchStats();
+              alert('הלו"ז אושר ונשמר!');
+          } else {
+              alert('שגיאה בשמירת הלו"ז');
+          }
+      } catch (error) {
+          console.error('Error confirming schedule:', error);
+          alert('שגיאה בתקשורת עם השרת');
+      } finally {
+          setLoading(false);
+      }
     }
   };
 
@@ -84,6 +120,12 @@ function App() {
       </header>
 
       <main>
+        <GenerationControls
+            students={stats} // Using stats as it contains all students
+            loading={loading}
+            onGenerate={(days, excludedIds) => fetchSchedule(days, excludedIds, false)}
+        />
+
         <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div className="flex-row">
             <button className="glass-panel" onClick={prevWeek} disabled={weekOffset === 0} style={{ padding: '0.5rem 1rem' }}>
@@ -97,16 +139,13 @@ function App() {
             <button className="glass-panel" onClick={() => setShowStats(!showStats)} style={{ padding: '0.5rem 1rem' }}>
               {showStats ? 'הסתר סטטיסטיקות' : 'הצג סטטיסטיקות'} 📊
             </button>
-            <button className="btn-primary" onClick={() => fetchSchedule(false)} disabled={loading}>
-              {loading ? 'טוען...' : 'צור לו"ז חדש 🎲'}
-            </button>
-            <button className="btn-confirm" onClick={confirmSchedule} disabled={loading}>
+            <button className="btn-confirm" onClick={confirmSchedule} disabled={loading || schedule.length === 0}>
               אשר ושמור ✓
             </button>
           </div>
         </div>
 
-        {showStats && <StatsPanel stats={stats} />}
+        {showStats && <StatsPanel stats={stats} onStatsUpdate={fetchStats} />}
 
         <ScheduleBoard schedule={currentWeek} />
 

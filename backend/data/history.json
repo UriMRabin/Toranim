@@ -1,7 +1,18 @@
 {
-    "tamiCount": {},
-    "torenCount": {},
-    "lastTamiDate": {},
-    "lastTorenDate": {},
-    "schedule": []
+  "tamiCount": {
+    "סהר כהן": 5,
+    "נעה קנר": 1,
+    "נועה ליפשיץ": 1,
+    "מיכאלה פרידמן": 1
+  },
+  "torenCount": {
+    "סהר כהן": 2
+  },
+  "lastTamiDate": {
+    "נעה קנר": "2026-01-22",
+    "נועה ליפשיץ": "2026-01-22",
+    "מיכאלה פרידמן": "2026-01-22"
+  },
+  "lastTorenDate": {},
+  "schedule": []
 }
