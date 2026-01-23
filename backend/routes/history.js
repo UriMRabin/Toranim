@@ -1,5 +1,5 @@
 import express from 'express';
-import { loadHistory, saveHistory } from '../services/historyService.js';
+import { loadHistory, saveHistory, updateStudentStats } from '../services/historyService.js';
 import { STUDENTS_DATA } from '../data/students.js';
 
 export const historyRouter = express.Router();
@@ -34,6 +34,23 @@ historyRouter.get('/stats', (req, res) => {
     } catch (error) {
         console.error('Stats fetch error:', error);
         res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+});
+
+// POST /api/history/update - Update stats for a student
+historyRouter.post('/update', (req, res) => {
+    try {
+        const { studentId, tamiCount, torenCount } = req.body;
+
+        if (!studentId || tamiCount === undefined || torenCount === undefined) {
+             return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        updateStudentStats(studentId, parseInt(tamiCount, 10), parseInt(torenCount, 10));
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Stats update error:', error);
+        res.status(500).json({ error: 'Failed to update stats' });
     }
 });
 

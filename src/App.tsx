@@ -1,19 +1,32 @@
 import { useState, useEffect } from 'react';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { StatsPanel } from './components/StatsPanel';
+import { GenerationControls } from './components/GenerationControls';
+import { StudentSelector } from './components/StudentSelector';
+import { formatScheduleForWhatsApp } from './utils/whatsappFormatter';
 import './index.css';
 
 // Backend URL - will be updated after Render deployment
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+interface Student {
+    id: string;
+    name: string;
+    group: string;
+}
+
 function App() {
-  const [schedule, setSchedule] = useState([]);
-  const [stats, setStats] = useState([]);
+  const [schedule, setSchedule] = useState<any[]>([]);
+  const [stats, setStats] = useState<Student[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showStats, setShowStats] = useState(false);
 
-  const fetchSchedule = async (persist = false) => {
+  // Edit Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<{date: string, group: string, role: string, currentId: string} | null>(null);
+
+  const fetchSchedule = async (days = 7, excludedIds: string[] = [], persist = false) => {
     setLoading(true);
     try {
       const today = new Date();
@@ -21,7 +34,18 @@ function App() {
       startOfWeek.setDate(today.getDate() - today.getDay());
 
       const startDate = startOfWeek.toISOString().split('T')[0];
-      const url = `${API_URL}/api/schedule?startDate=${startDate}&days=28&persist=${persist}`;
+
+      const params = new URLSearchParams({
+          startDate,
+          days: days.toString(),
+          persist: persist.toString()
+      });
+
+      if (excludedIds.length > 0) {
+          params.append('excludedIds', excludedIds.join(','));
+      }
+
+      const url = `${API_URL}/api/schedule?${params.toString()}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -32,7 +56,6 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to fetch schedule:', error);
-      // Fallback message
       alert('לא ניתן להתחבר לשרת. ודא שהשרת פועל.');
     } finally {
       setLoading(false);
@@ -52,7 +75,7 @@ function App() {
   };
 
   useEffect(() => {
-    fetchSchedule(false);
+    fetchSchedule(7); // Default to 1 week
     fetchStats();
   }, []);
 
@@ -68,10 +91,77 @@ function App() {
 
   const confirmSchedule = async () => {
     if (confirm('האם לאשר ולשמור את הלו"ז הנוכחי? פעולה זו תעדכן את ההיסטוריה.')) {
-      await fetchSchedule(true);
-      await fetchStats();
-      alert('הלו"ז אושר ונשמר!');
+      setLoading(true);
+      try {
+          const response = await fetch(`${API_URL}/api/schedule/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  schedule // Send the current schedule to persist
+              })
+          });
+
+          if (response.ok) {
+              await fetchStats();
+              alert('הלו"ז אושר ונשמר!');
+          } else {
+              alert('שגיאה בשמירת הלו"ז');
+          }
+      } catch (error) {
+          console.error('Error confirming schedule:', error);
+          alert('שגיאה בתקשורת עם השרת');
+      } finally {
+          setLoading(false);
+      }
     }
+  };
+
+  const handleCopyWhatsApp = () => {
+      const text = formatScheduleForWhatsApp(currentWeek);
+      navigator.clipboard.writeText(text).then(() => {
+          alert('הלו"ז הועתק ללוח! 📋\nניתן להדביק בוואטסאפ.');
+      }).catch(err => {
+          console.error('Failed to copy:', err);
+          alert('שגיאה בהעתקה.');
+      });
+  };
+
+  const openEditModal = (date: string, group: string, role: string, currentId: string) => {
+      setEditingSlot({ date, group, role, currentId });
+      setIsEditModalOpen(true);
+  };
+
+  const handleStudentSelect = (student: Student) => {
+      if (!editingSlot) return;
+
+      const newSchedule = schedule.map(day => {
+          if (day.date === editingSlot.date) {
+              const newAssignments = { ...day.assignments };
+              const groupAssignment = { ...newAssignments[editingSlot.group] };
+
+              if (editingSlot.role === 'main') {
+                  groupAssignment.main = { ...student, volunteeringHours: groupAssignment.main.volunteeringHours };
+              } else if (editingSlot.role === 'lunch') {
+                  groupAssignment.replacements = {
+                      ...groupAssignment.replacements,
+                      lunch: { ...student, volunteeringHours: groupAssignment.replacements.lunch?.volunteeringHours }
+                  };
+              } else if (editingSlot.role === 'dinner') {
+                  groupAssignment.replacements = {
+                      ...groupAssignment.replacements,
+                      dinner: { ...student, volunteeringHours: groupAssignment.replacements.dinner?.volunteeringHours }
+                  };
+              }
+
+              newAssignments[editingSlot.group] = groupAssignment;
+              return { ...day, assignments: newAssignments };
+          }
+          return day;
+      });
+
+      setSchedule(newSchedule);
+      setIsEditModalOpen(false);
+      setEditingSlot(null);
   };
 
   return (
@@ -84,6 +174,12 @@ function App() {
       </header>
 
       <main>
+        <GenerationControls
+            students={stats}
+            loading={loading}
+            onGenerate={(days, excludedIds) => fetchSchedule(days, excludedIds, false)}
+        />
+
         <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div className="flex-row">
             <button className="glass-panel" onClick={prevWeek} disabled={weekOffset === 0} style={{ padding: '0.5rem 1rem' }}>
@@ -97,18 +193,21 @@ function App() {
             <button className="glass-panel" onClick={() => setShowStats(!showStats)} style={{ padding: '0.5rem 1rem' }}>
               {showStats ? 'הסתר סטטיסטיקות' : 'הצג סטטיסטיקות'} 📊
             </button>
-            <button className="btn-primary" onClick={() => fetchSchedule(false)} disabled={loading}>
-              {loading ? 'טוען...' : 'צור לו"ז חדש 🎲'}
+             <button className="btn-secondary" onClick={handleCopyWhatsApp} style={{ padding: '0.5rem 1rem', background: '#25D366', borderColor: '#25D366' }}>
+              העתק לוואטסאפ 📱
             </button>
-            <button className="btn-confirm" onClick={confirmSchedule} disabled={loading}>
+            <button className="btn-confirm" onClick={confirmSchedule} disabled={loading || schedule.length === 0}>
               אשר ושמור ✓
             </button>
           </div>
         </div>
 
-        {showStats && <StatsPanel stats={stats} />}
+        {showStats && <StatsPanel stats={stats} onStatsUpdate={fetchStats} />}
 
-        <ScheduleBoard schedule={currentWeek} />
+        <ScheduleBoard
+            schedule={currentWeek}
+            onEditAssignment={openEditModal}
+        />
 
         <div style={{ marginTop: '3rem' }}>
           <h2 style={{ marginBottom: '1rem' }}>לוח שנה</h2>
@@ -122,6 +221,14 @@ function App() {
           </div>
         </div>
       </main>
+
+      <StudentSelector
+          students={stats}
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          onSelect={handleStudentSelect}
+          currentStudentId={editingSlot?.currentId}
+      />
     </div>
   );
 }
