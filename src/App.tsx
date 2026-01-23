@@ -2,21 +2,31 @@ import { useState, useEffect } from 'react';
 import { ScheduleBoard } from './components/ScheduleBoard';
 import { StatsPanel } from './components/StatsPanel';
 import { GenerationControls } from './components/GenerationControls';
+import { StudentSelector } from './components/StudentSelector';
+import { formatScheduleForWhatsApp } from './utils/whatsappFormatter';
 import './index.css';
 
 // Backend URL - will be updated after Render deployment
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+interface Student {
+    id: string;
+    name: string;
+    group: string;
+}
+
 function App() {
-  const [schedule, setSchedule] = useState([]);
-  const [stats, setStats] = useState([]);
+  const [schedule, setSchedule] = useState<any[]>([]);
+  const [stats, setStats] = useState<Student[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showStats, setShowStats] = useState(false);
-  // lastGenParams is less critical now that we persist current schedule, but kept for fetchSchedule usage
-  const [lastGenParams, setLastGenParams] = useState({ days: 28, excludedIds: [] });
 
-  const fetchSchedule = async (days = 28, excludedIds: string[] = [], persist = false) => {
+  // Edit Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<{date: string, group: string, role: string, currentId: string} | null>(null);
+
+  const fetchSchedule = async (days = 7, excludedIds: string[] = [], persist = false) => {
     setLoading(true);
     try {
       const today = new Date();
@@ -43,13 +53,9 @@ function App() {
       if (data.schedule) {
         setSchedule(data.schedule);
         setWeekOffset(0);
-        if (!persist) {
-            setLastGenParams({ days, excludedIds });
-        }
       }
     } catch (error) {
       console.error('Failed to fetch schedule:', error);
-      // Fallback message
       alert('לא ניתן להתחבר לשרת. ודא שהשרת פועל.');
     } finally {
       setLoading(false);
@@ -69,7 +75,7 @@ function App() {
   };
 
   useEffect(() => {
-    fetchSchedule(7); // Default to 1 week on load
+    fetchSchedule(7); // Default to 1 week
     fetchStats();
   }, []);
 
@@ -110,6 +116,54 @@ function App() {
     }
   };
 
+  const handleCopyWhatsApp = () => {
+      const text = formatScheduleForWhatsApp(currentWeek);
+      navigator.clipboard.writeText(text).then(() => {
+          alert('הלו"ז הועתק ללוח! 📋\nניתן להדביק בוואטסאפ.');
+      }).catch(err => {
+          console.error('Failed to copy:', err);
+          alert('שגיאה בהעתקה.');
+      });
+  };
+
+  const openEditModal = (date: string, group: string, role: string, currentId: string) => {
+      setEditingSlot({ date, group, role, currentId });
+      setIsEditModalOpen(true);
+  };
+
+  const handleStudentSelect = (student: Student) => {
+      if (!editingSlot) return;
+
+      const newSchedule = schedule.map(day => {
+          if (day.date === editingSlot.date) {
+              const newAssignments = { ...day.assignments };
+              const groupAssignment = { ...newAssignments[editingSlot.group] };
+
+              if (editingSlot.role === 'main') {
+                  groupAssignment.main = { ...student, volunteeringHours: groupAssignment.main.volunteeringHours };
+              } else if (editingSlot.role === 'lunch') {
+                  groupAssignment.replacements = {
+                      ...groupAssignment.replacements,
+                      lunch: { ...student, volunteeringHours: groupAssignment.replacements.lunch?.volunteeringHours }
+                  };
+              } else if (editingSlot.role === 'dinner') {
+                  groupAssignment.replacements = {
+                      ...groupAssignment.replacements,
+                      dinner: { ...student, volunteeringHours: groupAssignment.replacements.dinner?.volunteeringHours }
+                  };
+              }
+
+              newAssignments[editingSlot.group] = groupAssignment;
+              return { ...day, assignments: newAssignments };
+          }
+          return day;
+      });
+
+      setSchedule(newSchedule);
+      setIsEditModalOpen(false);
+      setEditingSlot(null);
+  };
+
   return (
     <div className="container" style={{ minHeight: '100vh' }}>
       <header style={{ marginBottom: '2rem', textAlign: 'center' }}>
@@ -121,7 +175,7 @@ function App() {
 
       <main>
         <GenerationControls
-            students={stats} // Using stats as it contains all students
+            students={stats}
             loading={loading}
             onGenerate={(days, excludedIds) => fetchSchedule(days, excludedIds, false)}
         />
@@ -139,6 +193,9 @@ function App() {
             <button className="glass-panel" onClick={() => setShowStats(!showStats)} style={{ padding: '0.5rem 1rem' }}>
               {showStats ? 'הסתר סטטיסטיקות' : 'הצג סטטיסטיקות'} 📊
             </button>
+             <button className="btn-secondary" onClick={handleCopyWhatsApp} style={{ padding: '0.5rem 1rem', background: '#25D366', borderColor: '#25D366' }}>
+              העתק לוואטסאפ 📱
+            </button>
             <button className="btn-confirm" onClick={confirmSchedule} disabled={loading || schedule.length === 0}>
               אשר ושמור ✓
             </button>
@@ -147,7 +204,10 @@ function App() {
 
         {showStats && <StatsPanel stats={stats} onStatsUpdate={fetchStats} />}
 
-        <ScheduleBoard schedule={currentWeek} />
+        <ScheduleBoard
+            schedule={currentWeek}
+            onEditAssignment={openEditModal}
+        />
 
         <div style={{ marginTop: '3rem' }}>
           <h2 style={{ marginBottom: '1rem' }}>לוח שנה</h2>
@@ -161,6 +221,14 @@ function App() {
           </div>
         </div>
       </main>
+
+      <StudentSelector
+          students={stats}
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          onSelect={handleStudentSelect}
+          currentStudentId={editingSlot?.currentId}
+      />
     </div>
   );
 }
